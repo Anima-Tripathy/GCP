@@ -1,0 +1,55 @@
+WITH
+  trip_distance AS (
+SELECT
+  bikeid,
+  ST_Distance(ST_GeogPoint(s.longitude,
+      s.latitude),
+    ST_GeogPoint(e.longitude,
+      e.latitude)) AS distance
+FROM
+  `bigquery-public-data.new_york_citibike.citibike_trips`,
+  `bigquery-public-data.new_york_citibike.citibike_stations` as s,
+  `bigquery-public-data.new_york_citibike.citibike_stations` as e
+WHERE
+  start_station_id = s.station_id
+  AND end_station_id = e.station_id )
+SELECT
+  bikeid,
+  SUM(distance)/1000 AS total_distance
+FROM
+  trip_distance
+GROUP BY
+  bikeid
+ORDER BY
+  total_distance DESC
+LIMIT
+  5
+
+export PROJECT_ID=$(gcloud info --format='value(config.project)')
+export BUCKET=${PROJECT_ID}-ml
+
+
+gcloud sql instances create taxi \
+    --tier=db-n1-standard-1 --activation-policy=ALWAYS
+
+Set a root password for the Cloud SQL instance:
+
+gcloud sql users set-password root --host % --instance taxi \
+ --password apple
+
+export ADDRESS=$(wget -qO - http://ipecho.net/plain)/32
+
+gcloud sql instances patch taxi --authorized-networks $ADDRESS
+
+Get the IP address of your Cloud SQL instance by running:
+MYSQLIP=$(gcloud sql instances describe \
+taxi --format="value(ipAddresses.ipAddress)")
+
+
+
+gsutil cp gs://cloud-training/OCBL013/nyc_tlc_yellow_trips_2018_subset_1.csv trips.csv-1
+gsutil cp gs://cloud-training/OCBL013/nyc_tlc_yellow_trips_2018_subset_2.csv trips.csv-2
+
+
+mysqlimport --local --host=$MYSQLIP --user=root --password \
+--ignore-lines=1 --fields-terminated-by=',' bts trips.csv-*
